@@ -62,7 +62,7 @@ fun MessageScreen() {
     LaunchedEffect(key1 = Unit) {
         // NodeId を取得する
         launch {
-            SendTextTool.collectDeviceNodeId(context)
+            SendTextTool.collectDeviceNodeId(context, SendTextTool.PHONE_TRANSCRIPTION_CAPABILITY_NAME)
                 .collect { deviceNodeData.value = it }
         }
 
@@ -92,7 +92,12 @@ fun MessageScreen() {
             Button(onClick = {
                 scope.launch {
                     val nodeId = deviceNodeData.value?.nodeId ?: return@launch
-                    SendTextTool.sendText(context, nodeId, inputText.value)
+                    SendTextTool.sendText(
+                        context = context,
+                        nodeId = nodeId,
+                        capability = SendTextTool.PHONE_TRANSCRIPTION_CAPABILITY_NAME,
+                        text = inputText.value
+                    )
                 }
             }) { Text(text = "送信") }
         }

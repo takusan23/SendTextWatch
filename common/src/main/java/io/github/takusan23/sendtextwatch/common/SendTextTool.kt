@@ -3,8 +3,8 @@ package io.github.takusan23.sendtextwatch.common
 import android.content.Context
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.CapabilityClient
-import com.google.android.gms.wearable.CapabilityInfo
 import com.google.android.gms.wearable.MessageClient
+import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -16,13 +16,26 @@ import kotlin.coroutines.resumeWithException
 
 object SendTextTool {
 
-    private const val TRANSCRIPTION_CAPABILITY_NAME = "text_transcription"
+    // wear.xml の値。Android / WearOS 側で違う値にする必要がある模様
 
-    /** [TRANSCRIPTION_CAPABILITY_NAME]をサポートしている WearOS デバイスを見つける */
-    fun collectDeviceNodeId(context: Context) = callbackFlow {
+    /** WearOS 側アプリの wear.xml の値 */
+    const val WEAR_TRANSCRIPTION_CAPABILITY_NAME = "wear_text_transcription"
 
-        fun sendResult(capabilityInfo: CapabilityInfo) {
-            val nodes = capabilityInfo.nodes
+    /** Android 側アプリの wear.xml の値 */
+    const val PHONE_TRANSCRIPTION_CAPABILITY_NAME = "phone_text_transcription"
+
+    /**
+     * WearOS / Android デバイスを見つける
+     *
+     * @param context [Context]
+     * @param capability [WEAR_TRANSCRIPTION_CAPABILITY_NAME] [PHONE_TRANSCRIPTION_CAPABILITY_NAME]
+     */
+    fun collectDeviceNodeId(
+        context: Context,
+        capability: String
+    ) = callbackFlow {
+
+        fun sendResult(nodes: Set<Node>) {
             val findNode = (nodes.firstOrNull { it.isNearby } ?: nodes.firstOrNull()) ?: return
             trySend(DeviceNodeData(findNode.id, findNode.displayName))
         }
@@ -30,19 +43,21 @@ object SendTextTool {
         val client = Wearable.getCapabilityClient(context)
 
         // addListener は変化したときしか呼ばれない
-        // 初回時はこれ
         withContext(Dispatchers.IO) {
-            Tasks.await(client.getCapability(TRANSCRIPTION_CAPABILITY_NAME, CapabilityClient.FILTER_REACHABLE))
-        }.also { capabilityInfo ->
-            println(capabilityInfo.nodes)
-            sendResult(capabilityInfo)
+            // 初回時はこれ
+            Tasks.await(client.getCapability(capability, CapabilityClient.FILTER_REACHABLE)).nodes
+                // 取れない場合は接続済みノードを返す、こっちも試す。WearOS -> Android がどうしても取れない
+                .ifEmpty { Tasks.await(Wearable.getNodeClient(context).connectedNodes) }
+        }.also { nodes ->
+            sendResult(nodes.toSet())
         }
+
 
         // 後で接続された場合
         val listener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
-            sendResult(capabilityInfo)
+            sendResult(capabilityInfo.nodes)
         }
-        client.addListener(listener, TRANSCRIPTION_CAPABILITY_NAME)
+        client.addListener(listener, capability)
         awaitClose { client.removeListener(listener) }
     }
 
@@ -51,13 +66,19 @@ object SendTextTool {
      *
      * @param context [Context]
      * @param nodeId [collectDeviceNodeId]で取得した送信先 Node ID
+     * @param capability 送り先 [WEAR_TRANSCRIPTION_CAPABILITY_NAME] [PHONE_TRANSCRIPTION_CAPABILITY_NAME]
      * @param text テキスト
      * @return 失敗したら例外
      */
-    suspend fun sendText(context: Context, nodeId: String, text: String) = suspendCancellableCoroutine { continuation ->
+    suspend fun sendText(
+        context: Context,
+        nodeId: String,
+        capability: String,
+        text: String
+    ) = suspendCancellableCoroutine { continuation ->
         Wearable.getMessageClient(context).sendMessage(
             nodeId,
-            TRANSCRIPTION_CAPABILITY_NAME,
+            capability,
             text.toByteArray(charset = Charsets.UTF_8)
         ).apply {
             addOnSuccessListener { continuation.resume(Unit) }

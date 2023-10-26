@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@array/android_wear_capabilities">
+<resources>
     <string-array name="android_wear_capabilities">
-        <item>text_transcription</item>
+        <item>phone_text_transcription</item>
     </string-array>
 </resources>
